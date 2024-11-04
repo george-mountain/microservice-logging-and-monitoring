@@ -1,0 +1,15 @@
+global:
+  resolve_timeout: 1m
+
+route:
+  receiver: 'email-notifications'
+
+receivers:
+- name: 'email-notifications'
+  email_configs:
+    - to: 'youremail@gmail.com' # Change this to your email address
+      from: 'youremail@gmail.com' # Change this to your email address
+      smarthost: 'smtp.gmail.com:587'
+      auth_username: 'youremail@gmail.com' # Change this to your email address
+      auth_password: 'yourgmailapppassword' # Change this to your gmail app password
+      send_resolved: true
