@@ -1,0 +1,166 @@
+services:
+  prometheus:
+    image: "${PROMETHEUS_IMAGE}"
+    container_name: "prometheus"
+    hostname: "prometheus"
+    restart: always
+    networks:
+      - monitoring-network
+    ports:
+      - "${PROMETHEUS_PORT}:9090"
+    user: nobody
+    volumes:
+      - "./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"
+      - "./config/prometheus/rules:/etc/prometheus/rules"
+      - "prometheus-data:/prometheus"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-admin-api'
+
+  node-exporter:
+    image: "${NODE_EXPORTER_IMAGE}"
+    container_name: node-exporter
+    hostname: node-exporter
+    restart: unless-stopped
+    networks:
+      - monitoring-network
+    ports:
+      - "${NODE_EXPORTER_PORT}:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+
+  alertmanager:
+    image: "${ALERTMANAGER_IMAGE}"
+    container_name: alertmanager
+    restart: unless-stopped
+    networks:
+      - monitoring-network
+    ports:
+      - "${ALERTMANAGER_PORT}:9093"
+    volumes:
+      - "./config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml"
+      - alertmanager-data:/data
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/data"
+      - "--log.level=debug"
+    env_file:
+      - .env
+
+  grafana:
+    image: "${GRAFANA_IMAGE}"
+    container_name: "grafana"
+    hostname: "grafana"
+    restart: always
+    networks:
+      - monitoring-network
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT}:3000"
+    environment:
+      - "GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD}"
+      - "GF_AUTH_ANONYMOUS_ENABLED=${GF_AUTH_ANONYMOUS_ENABLED}"
+    volumes:
+      - "./config/grafana/provisioning:/etc/grafana/provisioning"
+      - grafana-data:/var/lib/grafana
+
+  uptime-kuma:
+    image: "${UPTIME_KUMA_IMAGE}"
+    container_name: "uptime-kuma"
+    hostname: "uptime-kuma"
+    restart: always
+    networks:
+      - monitoring-network
+    ports:
+      - "${UPTIME_KUMA_PORT}:3001"
+      - "3307:3306"
+    volumes:
+      - "uptime-kuma-data:/app/data"
+
+  mysql:
+    image: "${MYSQL_IMAGE}"
+    container_name: "mysql"
+    hostname: "mysql"
+    restart: always
+    networks:
+      - monitoring-network
+    ports:
+      - "${MYSQL_PORT}:3306"
+    environment:
+      - "MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}"
+      - "MYSQL_DATABASE=${MYSQL_DATABASE}"
+      - "MYSQL_USER=${MYSQL_USER}"
+      - "MYSQL_PASSWORD=${MYSQL_PASSWORD}"
+  
+  loki:
+    image: "${LOKI_IMAGE}"
+    container_name: loki
+    networks:
+      - monitoring-network
+    ports:
+      - "${LOKI_PORT}:3100"
+    volumes:
+      - ./config/loki/local-config.yaml:/etc/loki/local-config.yaml
+      - loki-data:/loki
+      - ./config/loki/index:/loki/index
+      - ./config/loki/cache:/loki/cache
+      - ./config/loki/chunks:/loki/chunks
+      - ./config/loki/wal:/loki/wal
+      - ./config/loki/rules:/loki/rules
+    command: -config.file=/etc/loki/local-config.yaml
+
+  promtail:
+    image: "${PROMTAIL_IMAGE}"
+    container_name: promtail
+    networks:
+      - monitoring-network
+    volumes:
+      - ./config/promtail/config.yml:/etc/promtail/config.yml
+      - ./fastapi_service/app_logs:/var/log/fastapi_service
+      - ./django_service/app_logs:/var/log/django_service
+    command: -config.file=/etc/promtail/config.yml
+
+  fastapi-service:
+    build: ./fastapi_service
+    container_name: fastapi-service
+    networks:
+      - monitoring-network
+    ports:
+      - "${FASTAPI_PORT}:8000"
+    volumes:
+      - ./fastapi_service:/app
+      - ./fastapi_service/app_logs:/app/app_logs
+
+  django-service:
+    build: ./django_service
+    container_name: django-service
+    command: sh -c "python manage.py makemigrations && python manage.py migrate &&
+              python manage.py runserver 0.0.0.0:8000"
+    networks:
+      - monitoring-network
+    ports:
+      - "${DJANGO_PORT}:8000"
+    volumes:
+      - ./django_service:/app
+      - ./django_service/app_logs:/app/app_logs
+
+volumes:
+  prometheus-data:
+  alertmanager-data:
+  uptime-kuma-data:
+  loki-data:
+  grafana-data:
+
+networks:
+  monitoring-network:
+    driver: bridge
